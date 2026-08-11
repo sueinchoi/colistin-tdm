@@ -157,16 +157,19 @@ ui <- page_sidebar(
         tags$i(class = "fas fa-bullseye"), "Target"),
     numericInput("target_cavg", "Target Cavg total colistin (mg/L)", value = round(TARGET_LOW, 2),
                  min = 1, max = 12, step = 0.25),
+    ## 숫자는 상단 상수에서만 온다 — 문구에 하드코딩하면 f_u 가 바뀔 때 화면만 옛 값으로 남는다.
     tags$small(style = "color:#6c757d;",
-               ## R 은 인접 문자열을 자동으로 잇지 않는다 — paste0 로 명시한다
-               HTML(paste0(
-                 "Binding-adjusted window for this cohort (measured f<sub>u,eff</sub> = 0.225): ",
-                 "efficacy \u2265 4.63 mg/L total drug (fAUC<sub>24</sub>/MIC \u2265 25 at MIC 1 mg/L); ",
-                 "safety upper bound 5.5 mg/L total. That upper bound depends on the unbound ",
-                 "fraction of the cohorts that produced the 4 mg/L consensus limit, which was ",
-                 "never reported \u2014 across f<sub>u,ref</sub> 0.22\u20130.50 it spans 3.9\u20138.9 mg/L, ",
-                 "and at the low end it falls <em>below</em> the efficacy target. Treat this as a ",
-                 "narrow and uncertain window, not a precise interval."))),
+               HTML(sprintf(paste0(
+                 "<b>Aim for %.2f\u2013%.2f mg/L</b> (total drug).<br>",
+                 "<b>Lower</b> \u2014 the free-drug target fAUC<sub>24</sub>/MIC \u2265 25 at ",
+                 "MIC 1 mg/L, converted using this cohort's measured unbound fraction ",
+                 "(f<sub>u,eff</sub> = %.3f).<br>",
+                 "<b>Upper</b> \u2014 the 4 mg/L consensus safety limit, converted the same way.<br>",
+                 "<span style='color:#a1462b;'>The upper bound is the weaker of the two.</span> ",
+                 "The studies behind the 4 mg/L limit never measured unbound fraction, so it could ",
+                 "sit anywhere between %.1f and %.1f mg/L \u2014 at the low end, below the efficacy ",
+                 "target. Read this window as narrow and approximate, not exact."),
+                 TARGET_LOW, TARGET_HIGH, FU_EFF, TARGET_HI_LO, TARGET_HI_HI))),
 
     # TDM optional
     div(class = "section-header",
