@@ -20,7 +20,7 @@
 
 library(rsconnect)
 
-APP_NAME <- "colistin-tdm"          # 필요하면 바꾼다
+APP_NAME <- "colistin_new"          # 기존 슬롯 재사용 (무료 요금제 앱 개수 상한)
 FILES    <- c("app.R", "colistin_run330_mrgsolve.rds")
 
 stopifnot(all(file.exists(FILES)))

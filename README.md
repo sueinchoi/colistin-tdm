@@ -49,7 +49,15 @@ exceedance probabilities as a ranking of regimens rather than as absolute risks.
 **This differs from earlier versions of the application**, which used the total-drug 2–8 mg/L
 window in the dose-selection logic and therefore recommended different doses.
 
-## Running it
+## Live application
+
+<https://mychloe00.shinyapps.io/colistin_new/>
+
+Hosted on shinyapps.io for evaluation. The application holds no patient data: concentrations and
+covariates are entered by the user, used within the session and not stored. For clinical use it
+should be deployed on-premises from this repository.
+
+## Running it locally
 
 ```r
 install.packages(c("shiny", "bslib", "DT", "shinyWidgets", "shinycssloaders",
@@ -70,7 +78,8 @@ for a proper MAP fit). Expect the released figure, not the idealised one.
 ## Deploying
 
 `deploy.R` pushes the app to shinyapps.io. Set your account credentials once with
-`rsconnect::setAccountInfo()` — do not commit them.
+`rsconnect::setAccountInfo()` — do not commit them. The app name in `deploy.R` reuses an existing
+slot on the maintainer's account; change `APP_NAME` for your own deployment.
 
 ## Citation
 
