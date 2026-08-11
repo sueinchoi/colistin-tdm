@@ -362,23 +362,21 @@ ui <- page_sidebar(
       card(
         card_header("Model Information"),
         card_body(
-          tags$h5("Run330: 6-compartment Parent-Metabolite Model"),
+          tags$h5("Six-compartment parent-metabolite model"),
           tags$ul(
-            tags$li("CMS: 2-compartment"),
-            tags$li("Colistin A: 2-compartment (Q_MA estimated = 4.18 L/h, distinct from Q_CMS = 1.60 L/h)"),
-            tags$li("Colistin B: 2-compartment (Q_MB = 0.089 L/h)"),
-            tags$li("Identifiability constraints: V3 = V5 = V1, V4 = V6 = V2"),
-            tags$li("OFV 8744.01, minimisation successful (4.0 significant digits)")
+            tags$li(tags$strong("Colistimethate (CMS)"), ": two-compartment disposition"),
+            tags$li(tags$strong("Colistin A"), ": two-compartment, formed from CMS"),
+            tags$li(tags$strong("Colistin B"), ": two-compartment, formed from CMS"),
+            tags$li("Each species has its own inter-compartmental clearance. Metabolite volumes are tied to the corresponding CMS volumes (V3 = V5 = V1, V4 = V6 = V2) for identifiability, because no intravenous colistin was given.")
           ),
           tags$h5("Covariates"),
           tags$ul(
-            tags$li(tags$strong("CLCR"), " (Cockcroft-Gault, time-varying in the fit): affects CL_CMS, CLMA, CLMB — exponents 0.367 / 0.551 / 1.149"),
-            tags$li(tags$strong("Body weight"), " (fixed allometric): (WT/70)^0.75 on all clearances, (WT/70) on all volumes"),
-            tags$li(tags$em("BSA is not a covariate."), " It entered earlier models only as a proxy for the inverted Cockcroft-Gault sex factor; once that was corrected it never survives the covariate search (ΔOFV −0.6).")
+            tags$li(tags$strong("Creatinine clearance"), " (Cockcroft-Gault) on all three clearances, as a power function — exponents 0.37, 0.55 and 1.15 for CMS, colistin A and colistin B"),
+            tags$li(tags$strong("Body weight"), " by fixed allometric scaling: (WT/70)^0.75 on clearances, (WT/70) on volumes")
           ),
           tags$h5("Population"),
-          tags$p("21 ICU patients, Korean cohort, 575 observations (3 analytes × ~190 each)"),
-          tags$p("CLCR range: 8.3 – 308.9 mL/min")
+          tags$p("21 adult ICU patients (Korean cohort); 575 observations across the three analytes; creatinine clearance 8.3 - 308.9 mL/min."),
+          tags$p("Estimated in NONMEM 7.6.0 with first-order conditional estimation; parameter uncertainty from a 500-replicate nonparametric bootstrap.")
         )
       ),
       card(
