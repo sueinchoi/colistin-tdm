@@ -443,39 +443,65 @@ server <- function(input, output, session) {
 
   etas_est <- reactiveVal(c(0, 0, 0, 0))
 
-  run_map <- function(LD, MD, II, WT, CLCR, observations, N_grid=500) {
+  ## ---- MAP 추정 ---------------------------------------------------------
+  ## 2026-08-13 두 가지를 고쳤다 (EDA/161 의 동일 환자 20명 짝지은 비교 근거).
+  ##
+  ## 1) 사전항이 틀려 있었다. etas <- rnorm(...) * OMEGA_SD 이므로 e 는 이미
+  ##    η ~ N(0, Ω) 인데 목적함수가 -0.5*sum(e^2) 를 더했다. 올바른 항은
+  ##    -0.5*sum(e^2/ω^2) 다. 그대로 두면 CL 은 약 19배 과소, CL_MB 는 약 1.8배
+  ##    과대 벌점을 받는다.  -> MdAPE 15.7% → 13.9%
+  ## 2) 사전분포에서 뽑은 격자의 최댓값을 고르는 것은 MAP 을 **근사**할 뿐이다.
+  ##    연속 최적화로 바꾸면 훨씬 정확하다.                 -> MdAPE 13.9% → 5.8%
+  ##
+  ## 격자는 버리지 않고 **출발점 탐색**으로 쓴다. optim 이 실패하는 환자가 있어
+  ## (20명 중 4명) 그때는 격자 최적점으로 되돌아간다 — 조용히 실패하면 안 된다.
+  neg_obj <- function(e, doses, WT, CLCR, observations, end) {
+    sim <- mod %>% param(CLCR=CLCR, WT=WT,
+              TVCL_T = pop_par$TVCL_T * exp(e[1]),
+              TVV1   = pop_par$TVV1   * exp(e[2]),
+              TVCLMA = pop_par$TVCLMA * exp(e[3]),
+              TVCLMB = pop_par$TVCLMB * exp(e[4])) %>%
+      zero_re() %>% ev(doses) %>%
+      mrgsim(end = end, delta = 0.5, recsort = 3) %>% as.data.frame()
+    preds <- vapply(seq_len(nrow(observations)), function(j) {
+      r  <- observations[j, ]
+      pr <- sim[which.min(abs(sim$time - r$TIME)), ]
+      switch(as.character(r$CMT), "1" = pr$CMS_C, "3" = pr$MA_C, "5" = pr$MB_C, NA_real_)
+    }, numeric(1))
+    if (any(!is.finite(preds)) || any(preds <= 0)) return(1e10)
+    sg <- sqrt(RES_ADD[match(observations$CMT, c(1,3,5))]^2 +
+               (RES_PRP[match(observations$CMT, c(1,3,5))] * preds)^2)
+    sum(((observations$DV - preds)/sg)^2 + log(2*pi*sg^2)) + sum((e/OMEGA_SD)^2)
+  }
+
+  run_map <- function(LD, MD, II, WT, CLCR, observations, N_grid=200) {
     doses <- ev(amt = LD, rate = LD/input$inf_dur, cmt = 1, time = 0) +
              ev(amt = MD, rate = MD/input$inf_dur, ii = II,
                 addl = ceiling(168/II) - 1, cmt = 1, time = II)
-    etas <- matrix(rnorm(N_grid * 4), N_grid, 4)
-    etas <- sweep(etas, 2, OMEGA_SD, "*")
-    log_lik <- numeric(N_grid)
+    end <- max(observations$TIME) + 24
+    f <- function(e) neg_obj(e, doses, WT, CLCR, observations, end)
+
     withProgress(message = "Bayesian estimation", value = 0, {
+      ## (a) 성긴 격자로 출발점을 찾는다
+      etas <- sweep(matrix(rnorm(N_grid * 4), N_grid, 4), 2, OMEGA_SD, "*")
+      val  <- numeric(N_grid)
       for (k in 1:N_grid) {
-        e <- etas[k, ]
-        sim <- mod %>% param(CLCR=CLCR, WT=WT,
-                  TVCL_T = pop_par$TVCL_T * exp(e[1]),
-                  TVV1   = pop_par$TVV1   * exp(e[2]),
-                  TVCLMA = pop_par$TVCLMA * exp(e[3]),
-                  TVCLMB = pop_par$TVCLMB * exp(e[4])) %>%
-          zero_re() %>% ev(doses) %>%
-          mrgsim(end = max(observations$TIME) + 1, delta = 0.5, recsort = 3) %>%
-          as.data.frame()
-        preds <- sapply(seq_len(nrow(observations)), function(j) {
-          r <- observations[j, ]
-          pr <- sim %>% filter(abs(time - r$TIME) < 0.5) %>% slice(1)
-          if (nrow(pr) == 0) return(NA)
-          switch(as.character(r$CMT), "1" = pr$CMS_C, "3" = pr$MA_C, "5" = pr$MB_C, NA)
-        })
-        sigma_add <- RES_ADD[match(observations$CMT, c(1, 3, 5))]
-        sigma_prp <- RES_PRP[match(observations$CMT, c(1, 3, 5))]
-        sigma     <- sqrt(sigma_add^2 + (sigma_prp * preds)^2)
-        log_lik[k] <- -0.5 * sum(((observations$DV - preds)/sigma)^2 + log(2*pi*sigma^2),
-                                  na.rm = TRUE) - 0.5 * sum(e^2)
-        if (k %% 50 == 0) incProgress(50/N_grid, detail = sprintf("%d/%d samples", k, N_grid))
+        val[k] <- f(etas[k, ])
+        if (k %% 25 == 0) incProgress(25/N_grid * 0.6, detail = sprintf("search %d/%d", k, N_grid))
+      }
+      best_grid <- etas[which.min(val), ]; best_val <- min(val)
+
+      ## (b) 그 지점과 사전평균에서 연속 최적화
+      incProgress(0.1, detail = "optimising")
+      best <- list(par = best_grid, value = best_val)
+      for (st in list(best_grid, c(0,0,0,0))) {
+        r <- tryCatch(optim(st, f, method = "BFGS", control = list(maxit = 200)),
+                      error = function(e) NULL)
+        if (!is.null(r) && is.finite(r$value) && r$value < best$value) best <- r
+        incProgress(0.15)
       }
     })
-    return(etas[which.max(log_lik), ])
+    best$par
   }
 
   pta_reg <- function(LD, md_test, ii_test, WT, CLCR, etas_center=c(0,0,0,0), use_tdm=FALSE, N_mc=50) {
