@@ -296,10 +296,12 @@ ui <- page_sidebar(
         card_header("Interpretation Guide"),
         card_body(
           tags$ul(
-            tags$li(tags$strong("CMS (parent)"), ": Total parent drug"),
-            tags$li(tags$strong("Colistin A/B"), ": Active metabolites"),
-            tags$li(tags$strong("Total (A+B)"), ": Clinically relevant target; red dashed = 2 mg/L"),
-            tags$li("Steady state typically reached at Day 3-5")
+            tags$li(tags$strong("CMS (parent)"), ": the inactive prodrug. Shown because its peak drives the loading-dose check on the Summary tab, not because it is a target."),
+            tags$li(tags$strong("Colistin A / B"), ": the active species, formed from CMS."),
+            tags$li(tags$strong("Total (A+B)"), ": the only panel the target applies to — the red dashed line is the target set in the sidebar, and it is drawn on this panel alone."),
+            ## Day 2-3 / 5-7 은 이 모형으로 직접 계산한 값이다(21일 시뮬레이션의 일별 Cavg 가
+            ## 최종값의 90%에 도달하는 날: CLCR 50-200 에서 1-2일, CLCR 20 에서 5일).
+            tags$li("Steady state is reached within about 2–3 days at normal renal function, but takes 5–7 days when CL", tags$sub("CR"), " is near 20 mL/min. The exposure figures on the other tabs are read from Day 6–7.")
           )
         )
       )
@@ -314,7 +316,13 @@ ui <- page_sidebar(
           withSpinner(DT::dataTableOutput("dose_options_table"),
                        type = 4, color = "#2E86AB", size = 0.8),
           tags$small(tags$i(class="fas fa-info-circle"),
-                     " Regimens ranked by PTA (probability of Cavg ≥ target) then median Cavg. Sort by clicking columns.")
+                     HTML(sprintf(paste0(
+                       " Ranked by PTA (probability that C<sub>avg</sub> reaches the target you set), ",
+                       "then by median C<sub>avg</sub>. Click a column to re-sort.<br>",
+                       "The last two columns are the safety side: the median CMS peak, and how often ",
+                       "C<sub>avg</sub> exceeds the binding-adjusted upper bound of %.2f mg/L. ",
+                       "A regimen with high PTA is not automatically the recommendation — the ",
+                       "Summary tab applies both."), TARGET_HIGH)))
         )
       )
     ),
@@ -341,9 +349,15 @@ ui <- page_sidebar(
         card(
           card_header(tags$span(tags$i(class="fas fa-info-circle"), " Bayesian Estimation Method")),
           card_body(
-            tags$p("MAP (Maximum A Posteriori) Bayesian estimation uses 1000 ETA grid samples from the population OMEGA distribution. Each candidate ETA is evaluated for fit to observed TDM data plus the prior probability. The best-fit ETAs are selected and used to compute individual PK parameters."),
-            tags$p(tags$strong("Minimum TDM samples:"), " 2 (ideally ColA + ColB × peak + trough)"),
-            tags$p(tags$strong("Best results:"), " Samples at steady state (Day 5+)")
+            ## 이 앱의 추정기는 MAP 을 **푸는** 것이 아니라 격자 표본으로 **근사**한다.
+            ## 연구 환자에서 MdAPE 9.4% (제대로 된 MAP 적합은 5.3%). 그 차이를 숨기지 않는다.
+            tags$p("The estimator draws 1,000 η-vectors from the population OMEGA distribution, scores each on its fit to the entered concentrations together with its prior probability, and keeps the highest-scoring vector."),
+            tags$p(tags$strong("This approximates the MAP solution rather than solving for it."),
+                   " In the study patients it recovered individual average exposure with a median absolute percent error of 9.4%, against 5.3% for a proper MAP fit. Expect the released figure, not the idealised one."),
+            tags$p(tags$strong("Minimum samples:"), " 2. A peak and a trough for both colistin A and colistin B is the most informative set."),
+            tags$p(tags$strong("Timing:"), " samples taken at steady state carry the most information — the Trajectory tab shows when steady state is reached at this patient's renal function."),
+            tags$p(style="font-size:12px; color:#6c757d;",
+                   "With fewer than 2 usable concentrations the app falls back to population typical values and tells you it has done so.")
           )
         )
       ),
@@ -373,9 +387,12 @@ ui <- page_sidebar(
             tags$li("Each species has its own inter-compartmental clearance. Metabolite volumes are tied to the corresponding CMS volumes (V3 = V5 = V1, V4 = V6 = V2) for identifiability, because no intravenous colistin was given.")
           ),
           tags$h5("Covariates"),
+          ## 지수는 로드된 .rds 에서 읽는다 — 화면에 적어두면 모형을 갈아끼울 때 여기만 옛 값으로 남는다.
           tags$ul(
-            tags$li(tags$strong("Creatinine clearance"), " (Cockcroft-Gault) on all three clearances, as a power function — exponents 0.37, 0.55 and 1.15 for CMS, colistin A and colistin B"),
-            tags$li(tags$strong("Body weight"), " by fixed allometric scaling: (WT/70)^0.75 on clearances, (WT/70) on volumes")
+            tags$li(HTML(sprintf("<b>Creatinine clearance</b> (Cockcroft–Gault) on all three clearances, as a power function — exponents %.2f, %.2f and %.2f for CMS, colistin A and colistin B",
+                                 EXP_CL, EXP_MA, EXP_MB))),
+            tags$li(HTML(sprintf("<b>Body weight</b> by fixed allometric scaling: (WT/70)<sup>%.2f</sup> on clearances, (WT/70)<sup>%.0f</sup> on volumes",
+                                 EXP_WT_C, EXP_WT_V)))
           ),
           tags$h5("Population"),
           tags$p("21 adult ICU patients (Korean cohort); 575 observations across the three analytes; creatinine clearance 8.3 - 308.9 mL/min."),
@@ -387,7 +404,8 @@ ui <- page_sidebar(
         card_body(
           tags$ul(
             tags$li("Developed on N=21; external validation pending"),
-            tags$li("Total (bound + unbound) colistin. This cohort's measured unbound fraction is fu,eff = 0.225, well below the 0.5 often assumed — so the exposure shown here is not interchangeable with free-drug targets from cohorts that did not measure binding"),
+            tags$li(HTML(sprintf("Concentrations are total (bound + unbound) colistin. This cohort's measured unbound fraction is f<sub>u,eff</sub> = %.3f, well below the 0.5 often assumed — so the exposure shown here is not interchangeable with free-drug targets from cohorts that did not measure binding",
+                                 FU_EFF))),
             tags$li("Intended for adult ICU populations"),
             tags$li("Not a substitute for clinical judgment")
           )
@@ -408,9 +426,12 @@ server <- function(input, output, session) {
     CLCR <- (140 - input$age)/input$cr * input$wt/72 *
             ifelse(sex_n == 0, 0.85, 1.0)
     CLCR <- min(max(CLCR, 5), 310)   # cohort max under the corrected formula is 308.9
+    ## 60-90 은 정상이 아니라 경도 저하다. 예전 라벨은 그 구간을 "normal" 로,
+    ## 정상 범위인 90-120 을 이름 없이 두고 있었다.
     clcr_cat <- cut(CLCR, c(0,30,60,90,120,310),
-                    labels=c("<30 (severe CKD)","30-60","60-90 (normal)",
-                             "90-120","ARC (>120)"))
+                    labels=c("<30 (severe impairment)", "30–60 (moderate)",
+                             "60–90 (mild)", "90–120 (normal)",
+                             ">120 (augmented clearance)"))
     list(CLCR = round(CLCR, 1),
          CLCR_cat = as.character(clcr_cat))
   })
@@ -502,6 +523,12 @@ server <- function(input, output, session) {
         etas <- run_map(LD, MD, II, input$wt, d$CLCR, obs, N_grid=1000)
         etas_est(etas)
       } else {
+        ## 조용히 population 으로 되돌아가면 안 된다 — TDM 스위치가 켜져 있어서
+        ## 사용자는 개인화된 예측을 보고 있다고 생각한다.
+        showNotification(
+          sprintf("TDM is on but only %d usable concentration was entered (2 are needed). Showing population typical predictions instead.",
+                  nrow(obs)),
+          type = "warning", duration = 12)
         etas_est(c(0,0,0,0))
       }
     } else {
@@ -531,7 +558,10 @@ server <- function(input, output, session) {
       day1 <- sim %>% filter(time >= 0, time <= 24)
       day1_cmax_cms <- max(day1$CMS_C, na.rm = TRUE) / 1000
       day1_tot <- (day1$MA_C + day1$MB_C) / 1000
-      t_therapeutic <- if (any(day1_tot >= 2)) day1$time[which(day1_tot >= 2)[1]] else NA_real_
+      ## 기준은 효능 하한(TARGET_LOW)이다. 여기 박혀 있던 2 mg/L 은 폐기된 총약물
+      ## 2-8 창의 값이라, 로딩 후 도달 시간을 실제보다 낙관적으로 보고했다.
+      t_therapeutic <- if (any(day1_tot >= TARGET_LOW))
+                         day1$time[which(day1_tot >= TARGET_LOW)[1]] else NA_real_
 
       results_R$current <- list(cavg = cavg_curr, cmax_cms = cmax_cms,
                                  day1_cmax_cms = day1_cmax_cms,
@@ -571,7 +601,8 @@ server <- function(input, output, session) {
       # ====================================================
       # Tier 1 (must-pass): PTA >= 80%  AND  Cmax_CMS <= 40  AND  P(Cavg > 결합보정 상한) <= 30%
       # Tier 2 (ranking among eligible):
-      #   a) Cavg_median in [target, target*3]
+      #   a) Cavg_median in [TARGET_LOW, TARGET_HIGH] (결합보정 창; 예전 주석의
+      #      [target, target*3] 은 이미 쓰이지 않는 규칙이었다)
       #   b) Lowest overexposure rate
       #   c) Match current interval
       #   d) Lower dose when tied
@@ -696,14 +727,18 @@ server <- function(input, output, session) {
           div(class = "metric-sub",
               tags$span(class = paste("status-pill", cmax_class), cmax_label)))),
         column(6, div(class = "metric-box",
-          div(class = "metric-label", "Time to Cavg ≥ 2 mg/L"),
+          ## "Cavg" 가 아니다 — 순간 총 콜리스틴 농도가 처음 목표선을 넘는 시각이다.
+          div(class = "metric-label",
+              sprintf("Time to total colistin ≥ %.2f mg/L", TARGET_LOW)),
           div(class = "metric-value",
               if (is.na(t_ther)) "— " else sprintf("%.1f h", t_ther)),
           div(class = "metric-sub",
               tags$span(class = paste("status-pill", t_class), t_label))))
       ),
+      ## 50/80 mg/L 은 이 도구가 쓰는 화면 표시용 기준이지 검증된 한계치가 아니다.
+      ## 이전 문구는 "warrants reducing LD" 라고 단정했는데 뒷받침할 출처가 없다.
       tags$p(style = "margin-top: 8px; color: #6c757d; font-size: 12px;",
-             "Reference: CMS Cmax > 50 mg/L considered cautionary (extrapolated from safety PK literature); > 80 mg/L warrants reducing LD or extending infusion duration. The TDM tool does not automatically adjust the loading dose — TDM sampling occurs after the loading phase. Clinical judgement advised.")
+             "The 50 and 80 mg/L flags on the CMS peak are screening thresholds used by this tool, not established limits — no peak-CMS exposure–toxicity threshold has been defined. Read a flag as a prompt to reconsider the loading dose or lengthen the infusion, not as a rule. The loading dose is never adjusted automatically here: TDM sampling happens after the loading phase, so nothing on this card is informed by measured concentrations.")
     )
   })
 
@@ -723,9 +758,11 @@ server <- function(input, output, session) {
     # Traffic light for each criterion
     pta_light <- if (r$pta*100 >= 90) "🟢"
                  else if (r$pta*100 >= r$threshold) "🟡" else "🔴"
+    ## 노란불 경계는 안전 상한 민감도의 위쪽 끝(TARGET_HI_HI)이다. 하드코딩된 8 은
+    ## 폐기된 총약물 2-8 창의 잔재였다.
     cavg_light <- if (r$cavg_pred >= r$target_low & r$cavg_pred <= r$target_high) "🟢"
                   else if (r$cavg_pred < r$target_low) "🔴"
-                  else if (r$cavg_pred <= 8) "🟡" else "🔴"
+                  else if (r$cavg_pred <= TARGET_HI_HI) "🟡" else "🔴"
     cmax_light <- if (r$cmax_cms <= r$cmax_max) "🟢"
                   else if (r$cmax_cms <= r$cmax_max*1.3) "🟡" else "🔴"
     overexp_light <- if (r$overexp <= r$overexp_max) "🟢"
@@ -765,7 +802,7 @@ server <- function(input, output, session) {
               tags$td(style="padding:4px 8px;", cavg_light, tags$strong(" Cavg:")),
               tags$td(style="padding:4px 8px;", sprintf("%.2f mg/L", r$cavg_pred)),
               tags$td(style="padding:4px 8px; color:#6c757d; font-size:12px;",
-                      sprintf("window %.1f–%.1f", r$target_low, r$target_high))),
+                      sprintf("window %.2f–%.2f", r$target_low, r$target_high))),
             tags$tr(
               tags$td(style="padding:4px 8px;", cmax_light, tags$strong(" Cmax CMS:")),
               tags$td(style="padding:4px 8px;", sprintf("%.1f mg/L", r$cmax_cms)),
@@ -790,20 +827,26 @@ server <- function(input, output, session) {
           tags$div(style="margin-top:10px; padding:10px; background:#f8f9fa; border-radius:6px; font-size:13px;",
             tags$p(tags$strong("Tier 1 — Must-pass (all required):")),
             tags$ul(
-              tags$li(sprintf("Efficacy: PTA ≥ %d%% for Cavg ≥ %.1f mg/L", r$threshold, input$target_cavg)),
+              tags$li(sprintf("Efficacy: PTA ≥ %d%% for Cavg ≥ %.2f mg/L", r$threshold, input$target_cavg)),
               tags$li(sprintf("Safety (parent): Median Cmax CMS ≤ %.0f mg/L", r$cmax_max)),
               tags$li(sprintf("Safety (metabolite): P(Cavg > %.2f mg/L) \u2264 %d%% \u2014 binding-adjusted upper bound, f_u,ref = 0.31 (sensitivity range %.1f\u2013%.1f)",
                               TARGET_HIGH, r$overexp_max, TARGET_HI_LO, TARGET_HI_HI))),
             tags$p(tags$strong("Tier 2 — Ranking among Tier 1 passed:")),
             tags$ol(
-              tags$li(sprintf("Cavg in therapeutic window [%.1f, %.1f] mg/L", r$target_low, r$target_high)),
+              tags$li(sprintf("Cavg in therapeutic window [%.2f, %.2f] mg/L", r$target_low, r$target_high)),
               tags$li(sprintf("Lowest overexposure risk (P(Cavg > %.2f mg/L))", TARGET_HIGH)),
               tags$li("Match current interval (clinical convenience)"),
               tags$li("Lower dose when tied (cost/toxicity)")),
+            ## 이전 문구는 "[target, target×3]" 이라고 적었는데 실제로 쓰이는 값은
+            ## [TARGET_LOW, TARGET_HIGH] = [4.63, 5.51] 이다 (4.63×3 = 13.9). 설명하는
+            ## 공식과 출력 숫자가 달랐다.
             tags$p(style="font-size:11px; color:#6c757d; margin-top:8px;",
                    tags$i(class="fas fa-info-circle"),
-                   sprintf(" Therapeutic window = [target, target×3] = [%.1f, %.1f]. Loading dose %.0f mg unchanged.",
-                           r$target_low, r$target_high, as.numeric(input$LD)))
+                   sprintf(paste0(
+                     " Window = [%.2f, %.2f] mg/L. Both bounds are free-drug values converted to ",
+                     "total drug with f_u,eff = %.3f, so they move together if the model is refitted. ",
+                     "The loading dose (%.0f mg) is not changed by this ranking."),
+                     r$target_low, r$target_high, FU_EFF, as.numeric(input$LD)))
           )
         )
       )
@@ -819,13 +862,20 @@ server <- function(input, output, session) {
       mutate(Conc_mgL = Conc_ngmL/1000,
              Analyte = factor(Analyte, levels=c("CMS_C","MA_C","MB_C","Total"),
                labels=c("CMS (parent)","Colistin A","Colistin B","Total Colistin (A+B)")))
+    ## 목표선은 Total(A+B) 패널에만 그린다. facet 안에서 geom_hline()/annotate() 는
+    ## 네 패널 전부에 복제되어 CMS 와 각 대사체에도 같은 목표가 있는 것처럼 보였다 —
+    ## 바로 위 Interpretation Guide 가 "Total 에만 적용된다"고 적어둔 것과 모순이었다.
+    tgt_df <- data.frame(
+      Analyte = factor("Total Colistin (A+B)", levels = levels(sim_long$Analyte)),
+      yint    = input$target_cavg)
     ggplot(sim_long, aes(time, Conc_mgL, color=Analyte)) +
       geom_line(linewidth=1.1) +
-      geom_hline(yintercept=input$target_cavg, linetype="dashed", color="#e63946",
-                 linewidth=0.7) +
-      annotate("text", x=155, y=input$target_cavg*1.3,
-               label=sprintf("Target %.0f mg/L", input$target_cavg),
-               color="#e63946", size=3.5) +
+      geom_hline(data = tgt_df, aes(yintercept = yint), inherit.aes = FALSE,
+                 linetype="dashed", color="#e63946", linewidth=0.7) +
+      ## %.0f 는 4.63 을 "Target 5 mg/L" 로 찍어 선의 위치와 라벨이 어긋났다.
+      geom_text(data = tgt_df, inherit.aes = FALSE,
+                aes(x = 165, y = yint*1.35, label = sprintf("Target %.2f mg/L", yint)),
+                color="#e63946", size=3.5, hjust = 1) +
       scale_y_log10() +
       scale_color_manual(values=c("CMS (parent)"="#2E86AB",
                                    "Colistin A"="#A23B72",
@@ -834,9 +884,11 @@ server <- function(input, output, session) {
       facet_wrap(~Analyte, scales="free_y") +
       labs(title=sprintf("Predicted Concentration-Time (LD %.0f + %.0f q%.0fh)",
                           as.numeric(input$LD), as.numeric(input$MD), as.numeric(input$II)),
-           subtitle=ifelse(input$use_tdm,
-             "▸ With Bayesian-estimated individual ETAs",
-             "▸ Population typical prediction (no TDM)"),
+           ## input$use_tdm 이 아니라 실제 추정된 ETA 로 판정한다. 스위치만 켜고
+           ## 시료가 부족하면 ETA 는 0 인데 부제는 개인화됐다고 말하고 있었다.
+           subtitle=if (!is.null(results_R$etas) && any(results_R$etas != 0))
+             "▸ Individualised — Bayesian ETAs estimated from the entered concentrations"
+           else "▸ Population typical prediction (no TDM applied)",
            x="Time (hr)", y="Concentration (mg/L, log)") +
       theme_minimal(base_size=13) +
       theme(legend.position="none",
@@ -847,20 +899,28 @@ server <- function(input, output, session) {
 
   output$dose_options_table <- DT::renderDataTable({
     if (is.null(results_R$options)) return(NULL)
+    ## colnames 는 8 개 열 전부에 준다. 6 개만 주면 DT 가 헤더를 6 칸만 만들고
+    ## 본문은 8 칸을 그대로 내보내, 안전 관련 두 열이 이름 없이 표시됐다.
     DT::datatable(results_R$options,
       options=list(pageLength=14, dom='ft',
                     columnDefs=list(list(className='dt-center', targets='_all'))),
       rownames=FALSE,
       colnames=c("Dose (mg)", "Interval (hr)", "Daily (mg)",
-                 "PTA (%)", "Cavg median", "Cavg IQR")) %>%
+                 "PTA (%)", "Cavg median (mg/L)", "Cavg IQR",
+                 "Median Cmax CMS (mg/L)",
+                 sprintf("P(Cavg > %.2f) %%", TARGET_HIGH))) %>%
       DT::formatStyle("PTA_pct",
         background = DT::styleColorBar(c(0, 100), "#2E86AB"),
         backgroundSize = "100% 70%",
         backgroundRepeat = "no-repeat",
         backgroundPosition = "right center",
         color = 'white', fontWeight = 'bold') %>%
+      ## 색 구간도 결합보정 창을 따른다. 예전 c(2,4,8) 기준에서는 효능 하한(4.63)에
+      ## 못 미치는 3 mg/L 이 초록, 창 한가운데인 5 mg/L 이 노랑으로 칠해져
+      ## 색이 권고와 반대 신호를 줬다.
       DT::formatStyle("Cavg_median",
-        backgroundColor = DT::styleInterval(c(2, 4, 8),
+        backgroundColor = DT::styleInterval(
+          c(TARGET_LOW, TARGET_HIGH, TARGET_HI_HI),
           c("#f8d7da", "#d4edda", "#fff3cd", "#f8d7da")))
   })
 
@@ -869,7 +929,8 @@ server <- function(input, output, session) {
     DT::datatable(head(results_R$options, 5),
       options=list(dom='t', ordering=FALSE),
       rownames=FALSE,
-      colnames=c("Dose (mg)", "Interval", "Daily", "PTA (%)", "Cavg", "IQR"),
+      colnames=c("Dose (mg)", "Interval", "Daily", "PTA (%)", "Cavg", "IQR",
+                 "Cmax CMS", sprintf("P(>%.2f) %%", TARGET_HIGH)),
       caption="Top 5 options (by PTA)") %>%
       DT::formatStyle("PTA_pct",
         background = DT::styleColorBar(c(0, 100), "#2E86AB"),
