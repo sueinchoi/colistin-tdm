@@ -73,7 +73,12 @@ ui <- page_sidebar(
     tags$span("Colistin Precision Dosing",
               style = "font-weight:700; color:#7FDBFF; font-size:24px; letter-spacing:0.5px; text-shadow: 0 1px 3px rgba(0,0,0,0.35);"),
     tags$span("v1.0",
-              style = "font-size:13px; color:#b8d8e8; margin-left:6px; font-weight:500;")
+              style = "font-size:13px; color:#b8d8e8; margin-left:6px; font-weight:500;"),
+    ## 연구용 표기는 화면에 상시 보여야 한다 — README 에만 두면 앱을 직접 여는
+    ## 사용자에게는 전달되지 않는다.
+    tags$span("RESEARCH USE ONLY — not prospectively validated",
+              style = paste("font-size:12px; color:#ffd9c4; margin-left:14px; font-weight:600;",
+                            "border:1px solid #ffd9c4; border-radius:10px; padding:2px 10px;"))
   ),
   theme = bs_theme(
     version = 5,
@@ -644,8 +649,17 @@ server <- function(input, output, session) {
         }
       }
 
+      ## 권고가 시뮬레이션 격자의 **가장자리**에 걸리면 그 사실을 알린다.
+      ## 격자 밖은 이 도구가 평가한 적이 없는 범위이고, 논문의 vignette 에서는
+      ## 더 낮은 격자(25 mg 부터)를 쓴 탓에 허가 용법보다 낮은 용량이 나온 적이 있다.
+      grid_daily <- sort(unique(opts_df$Daily_mg))
+      at_edge <- if (best$Daily_mg <= min(grid_daily)) "low"
+                 else if (best$Daily_mg >= max(grid_daily)) "high" else NA_character_
+
       results_R$recommendation <- list(
         rec_mg = best$Dose_mg, rec_ii = best$Interval_hr,
+        at_edge = at_edge,
+        grid_lo = min(grid_daily), grid_hi = max(grid_daily),
         cavg_pred = best$Cavg_median, pta = best$PTA_pct / 100,
         cmax_cms = best$Cmax_CMS_median,
         overexp = best$P_Cavg_over_pct,
@@ -779,8 +793,21 @@ server <- function(input, output, session) {
                             tags$i(class="fas fa-times-circle"),
                             " WARNING: No ideal regimen — individualized TDM essential"))
 
+    edge_banner <- if (!is.na(r$at_edge)) tags$div(
+      style = "background:#fde7d9; color:#8a3d16; padding:8px 14px; border-radius:6px; margin-bottom:10px;",
+      tags$i(class = "fas fa-border-style"),
+      sprintf(paste0(
+        " This recommendation sits at the %s end of the dose range this tool evaluates ",
+        "(%.0f–%.0f mg CBA/day). Doses outside that range have not been simulated here, ",
+        "so the ranking cannot tell you whether something further %s would be better — ",
+        "and the range is not a statement about licensed dosing."),
+        if (r$at_edge == "low") "lowest" else "highest",
+        r$grid_lo, r$grid_hi, if (r$at_edge == "low") "down" else "up"))
+    else NULL
+
     div(class = "rec-box",
       status_banner,
+      edge_banner,
       tags$h3(tags$i(class="fas fa-star"), " Recommended Dose"),
       fluidRow(
         column(5,
